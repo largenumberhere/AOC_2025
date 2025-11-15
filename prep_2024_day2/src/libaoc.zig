@@ -49,7 +49,7 @@ pub fn containsNonWhitespace(string: []const u8) bool {
     return false;
 }
 
-pub fn splitSpacesAlloc(alloc: std.mem.Allocator, list: *std.ArrayList([]const u8), string: []const u8) !void {
+pub fn splitSpacesAllocConst(alloc: std.mem.Allocator, list: *std.ArrayList([]const u8), string: []const u8) !void {
     var iter = std.mem.splitScalar(u8, string, ' ');
     while (iter.next()) |part| {
         if (part.len == 0) {
@@ -59,6 +59,22 @@ pub fn splitSpacesAlloc(alloc: std.mem.Allocator, list: *std.ArrayList([]const u
             continue;
         }
         try list.append(alloc, part);
+    }
+}
+
+pub fn splitSpacesAlloc(alloc: std.mem.Allocator, list: *std.ArrayList([]u8), string: []u8) !void {
+    var iter = std.mem.splitScalar(u8, string, ' ');
+    while (iter.next()) |part| {
+        if (part.len == 0) {
+            continue;
+        }
+        if (!containsNonWhitespace(part)) {
+            continue;
+        }
+
+        const part_copy = try alloc.dupe(u8, part);
+
+        try list.append(alloc, part_copy);
     }
 }
 

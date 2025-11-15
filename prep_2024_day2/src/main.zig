@@ -2,84 +2,108 @@ const std = @import("std");
 // const prep2 = @import("prep2");
 const libaoc = @import("libaoc.zig");
 
+fn same_sign(one: i64, two: i64) bool {
+    if (one > 0 and two > 0) {
+        return true;
+    } else if (one < 0 and two < 0) {
+        return true;
+    }
+
+    return false;
+}
+
+fn validate_steps(list: *std.ArrayList(i64)) bool {
+    if (list.items.len < 2) {
+        unreachable;
+    }
+
+    var all_ascending = true;
+    var all_descending = true;
+
+    for (0..list.items.len - 1) |i| {
+        const left = list.items[i];
+        const right = list.items[i + 1];
+
+        const abs_diff: i64 = if (left > right) left - right else right - left;
+
+        if (abs_diff > 3 or abs_diff == 0) {
+            return false;
+        }
+
+        if (right < left) {
+            all_ascending = false;
+        }
+
+        if (left < right) {
+            all_descending = false;
+        }
+
+        if (!all_ascending and !all_descending) {
+            return false;
+        }
+    }
+
+    if (!all_ascending and !all_descending) {
+        return false;
+    }
+
+    return true;
+}
+
 pub fn main() !void {
     var gpa = std.heap.DebugAllocator(.{}).init;
     const alloc = gpa.allocator();
     defer _ = gpa.deinit();
 
-    // var args_iter1 = try std.process.ArgIterator.initWithAllocator(alloc);
-    // defer args_iter1.deinit();
-    // const count =  libaoc.iterCount(std.process.ArgIterator,&args_iter1);
-    // if (count != 2) {
-    //     std.debug.print("Error: {s}{}{s}", .{"exactly two arguments are requred.Passed ", count, " instead"});
-    //     std.process.exit(1);
-    // }
-
-    // var args_iter2 = try std.process.ArgIterator.initWithAllocator(alloc);
-    // defer args_iter2.deinit();
-    // _ = args_iter2.skip();
-    // const arg2 = args_iter2.next().?;
-    const arg2 = "/home/rose/Documents/programming/aoc_2025/prep2/input.txt";
-    const file_contents = try libaoc.readFileToString(alloc, arg2);
-    defer alloc.free(file_contents);
-
-    var line_iter = std.mem.splitScalar(u8, file_contents, '\n');
-    var lefts = libaoc.AutoHashbag.init(alloc);
-    defer lefts.deinit();
-    var rights = libaoc.AutoHashbag.init(alloc);
-    defer rights.deinit();
-    var line_parts = try std.ArrayList([]const u8).initCapacity(alloc, 2);
-    defer line_parts.deinit(alloc);
-    while (line_iter.next()) |line| {
-        if (line.len == 0) {
-            continue;
-        }
-        line_parts.clearRetainingCapacity();
-        try libaoc.splitSpacesAlloc(alloc, &line_parts, line);
-
-        if (line_parts.items.len == 0) {
-            continue;
-        } else if (line_parts.items.len != 2) {
-            for (line_parts.items) |item| {
-                std.debug.print("'{s}'\n", .{item});
-            }
-            return error{InvalidInput}.InvalidInput;
-        }
-
-        const left = line_parts.items[0];
-        const right = line_parts.items[1];
-        try lefts.insert(try std.fmt.parseInt(i64, left, 10));
-        try rights.insert(try std.fmt.parseInt(i64, right, 10));
-    }
-
-    var lefts_iter = lefts.iterator();
-    var tally: i64 = 0;
-    while (lefts_iter.next()) |item| {
-        const key = item.key_ptr.*;
-        const count = item.value_ptr.*;
-
-        const similarity_score = (rights.get(key) orelse 0) * key;
-        const item_score = similarity_score * count;
-        tally += item_score;
-    }
-
-    var buff = [_]u8{0} ** 128;
-
     const stdout = std.fs.File.stdout();
-    var writer = stdout.writer(buff[0..]);
-    try writer.interface.print("tally = {}\n", .{tally});
-    try writer.interface.flush();
+    var stdout_buffer: [128]u8 = undefined;
+    var writer = stdout.writer(stdout_buffer[0..]);
 
+    const input_path = "input.txt";
     var lines = std.ArrayList([]u8).empty;
-    try libaoc.readFileLinesToStrings(alloc, "input.txt", &lines);
     defer {
         for (lines.items) |line| {
             alloc.free(line);
         }
         lines.deinit(alloc);
     }
+    try libaoc.readFileLinesToStrings(alloc, input_path, &lines);
 
-    for (lines.items) |line| {
-        std.debug.print("line: {s}\n", .{line});
+    var line_parts = std.ArrayList([]u8).empty;
+    defer {
+        for (line_parts.items) |line| {
+            alloc.free(line);
+        }
+        line_parts.deinit(alloc);
     }
+    var line_digits = std.ArrayList(i64).empty;
+    defer line_digits.deinit(alloc);
+
+    var valid_count: i64 = 0;
+    for (lines.items) |line| {
+        for (line_parts.items) |item| {
+            alloc.free(item);
+        }
+
+        line_parts.clearRetainingCapacity();
+        line_digits.clearRetainingCapacity();
+        try libaoc.splitSpacesAlloc(alloc, &line_parts, line);
+
+        for (line_parts.items) |item| {
+            const number = try std.fmt.parseInt(i64, item, 10);
+            try line_digits.append(alloc, number);
+        }
+
+        if (line_digits.items.len >= 2) {
+            if (validate_steps(&line_digits)) {
+                std.debug.print("{} is valid\n", .{line_digits});
+                valid_count += 1;
+                continue;
+            }
+        }
+    }
+
+    try writer.interface.print("{}\n", .{valid_count});
+
+    try writer.interface.flush();
 }
