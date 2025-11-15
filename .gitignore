@@ -1,0 +1,14 @@
+# IDE caches
+.idea/
+.vscode/
+.zig-cache/
+
+# zig compiler
+lib/zig
+zig_package/
+zig
+zig-out/
+
+# AOC secrets
+sample_input.txt
+input.txt
