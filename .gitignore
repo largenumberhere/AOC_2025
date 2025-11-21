@@ -10,5 +10,5 @@ zig
 zig-out/
 
 # AOC secrets
-sample_input.txt
+#sample_input.txt
 input.txt
