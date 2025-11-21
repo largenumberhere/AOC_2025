@@ -46,13 +46,6 @@ pub fn main() !void {
 
     var stdin_buffer = [_]u8{0} ** 1024;
     const stdin = std.fs.File.stdin();
-    // stdin.reader(std.Io, stdin_buffer[0..]);
-    // var reader = stdin.reader(, stdin_buffer[0..]);
-    // var tio = std.Io.Threaded.init(alloc);
-    // const io = tio.io();
-    // var reader = std.fs.File.reader(stdin, io, stdin_buffer[0..]);
-    // defer tio.deinit();
-    // const input = try reader.interface.allocRemaining(alloc, std.Io.Limit.unlimited);
 
     const file_contents = try readFileToString("input.txt", alloc);
     defer alloc.free(file_contents);
@@ -101,7 +94,7 @@ pub fn main() !void {
 
     const stdout = std.fs.File.stdout();
     var writer = stdout.writer(buff[0..]);
-    try writer.interface.print("tally = {}\n", .{tally});   
+    try writer.interface.print("tally = {}\n", .{tally});
     try writer.interface.flush();
 }
 
@@ -119,7 +112,6 @@ const Hashset = struct {
 
     pub fn deinit(self: *Self) void {
         self.map.deinit();
-        // alloc.destroy(self.map);
     }
 
     pub fn insert(self: *Self, value: i64) !void {

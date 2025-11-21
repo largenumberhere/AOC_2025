@@ -151,6 +151,4 @@ pub fn main() !void {
     }
 
     try stdout.interface.print("Page numbers result: {}\n", .{tally});
-
-    // std.debug.print("tally = {}\n", .{tally});
 }

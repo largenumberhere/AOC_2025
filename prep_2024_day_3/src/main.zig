@@ -7,17 +7,10 @@ pub fn main() !void {
     const alloc = gpa.allocator();
     defer _ = gpa.deinit();
 
-    // const stdout = std.fs.File.stdout();
-    // var stdout_buffer: [128]u8 = undefined;
-    // var writer = stdout.writer(stdout_buffer[0..]);
-
     const input_path = "input.txt";
     const file_contents = try libaoc.readFileToString(alloc, input_path);
     defer alloc.free(file_contents);
 
-    // const reg_str =
-    //     \\mul\((\d+)\,(\d+)\)
-    // ;
     const reg_str =
         \\(mul\(\d+,\d+\))|(don't)|(do)
     ;

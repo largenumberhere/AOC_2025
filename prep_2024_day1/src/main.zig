@@ -7,19 +7,7 @@ pub fn main() !void {
     const alloc = gpa.allocator();
     defer _ = gpa.deinit();
 
-    // var args_iter1 = try std.process.ArgIterator.initWithAllocator(alloc);
-    // defer args_iter1.deinit();
-    // const count =  libaoc.iterCount(std.process.ArgIterator,&args_iter1);
-    // if (count != 2) {
-    //     std.debug.print("Error: {s}{}{s}", .{"exactly two arguments are requred.Passed ", count, " instead"});
-    //     std.process.exit(1);
-    // }
-
-    // var args_iter2 = try std.process.ArgIterator.initWithAllocator(alloc);
-    // defer args_iter2.deinit();
-    // _ = args_iter2.skip();
-    // const arg2 = args_iter2.next().?;
-    const arg2 = "/home/rose/Documents/programming/aoc_2025/prep2/input.txt";
+    const arg2 = "input.txt";
     const file_contents = try libaoc.readFileToString(alloc, arg2);
     defer alloc.free(file_contents);
 
