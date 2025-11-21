@@ -1,16 +1,5 @@
 const std = @import("std");
-// const prep2 = @import("prep2");
 const libaoc = @import("libaoc.zig");
-
-fn same_sign(one: i64, two: i64) bool {
-    if (one > 0 and two > 0) {
-        return true;
-    } else if (one < 0 and two < 0) {
-        return true;
-    }
-
-    return false;
-}
 
 fn validate_steps(list: *std.ArrayList(i64)) bool {
     if (list.items.len < 2) {
@@ -96,7 +85,6 @@ pub fn main() !void {
 
         if (line_digits.items.len >= 2) {
             if (validate_steps(&line_digits)) {
-                std.debug.print("{} is valid\n", .{line_digits});
                 valid_count += 1;
                 continue;
             }
@@ -104,6 +92,5 @@ pub fn main() !void {
     }
 
     try writer.interface.print("{}\n", .{valid_count});
-
     try writer.interface.flush();
 }

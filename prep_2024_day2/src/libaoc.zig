@@ -49,6 +49,7 @@ pub fn containsNonWhitespace(string: []const u8) bool {
     return false;
 }
 
+// do not free the items
 pub fn splitSpacesAllocConst(alloc: std.mem.Allocator, list: *std.ArrayList([]const u8), string: []const u8) !void {
     var iter = std.mem.splitScalar(u8, string, ' ');
     while (iter.next()) |part| {
@@ -62,6 +63,7 @@ pub fn splitSpacesAllocConst(alloc: std.mem.Allocator, list: *std.ArrayList([]co
     }
 }
 
+// free the list items
 pub fn splitSpacesAlloc(alloc: std.mem.Allocator, list: *std.ArrayList([]u8), string: []u8) !void {
     var iter = std.mem.splitScalar(u8, string, ' ');
     while (iter.next()) |part| {
@@ -107,7 +109,19 @@ pub const AutoHashbag = struct {
         return self.map.get(value);
     }
 
-    pub fn iterator(self: *Self) std.AutoHashMap(i64, i64).Iterator {
-        return self.map.iterator();
+    pub fn iterator(self: *Self) struct {
+        inner: std.AutoHashMap(i64, i64).Iterator,
+
+        pub fn next(iter_self: *@This()) ?struct { key_ptr: *i64, count_ptr: *i64 } {
+            const entry = iter_self.inner.next() orelse return null;
+            return .{
+                .key_ptr = entry.key_ptr,
+                .count_ptr = entry.value_ptr,
+            };
+        }
+    } {
+        const iter = self.map.iterator();
+
+        return .{ .inner = iter };
     }
 };
