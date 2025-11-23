@@ -44,6 +44,11 @@ fn pages_map_clear(alloc: Allocator, pages_map: *PagesMap) void {
     pages_map.clearRetainingCapacity();
 }
 
+fn pages_map_deinit(alloc: Allocator, pages_map: *PagesMap) void {
+    _ = alloc; // unused, but implies allocation may happen in the map
+    pages_map.clearAndFree();
+}
+
 fn pages_valid(pages_map: *PagesMap, rules: *const RulesMap) !bool {
     var rules_iter = rules.iterator();
     while (rules_iter.next()) |rule| {
@@ -62,6 +67,28 @@ fn pages_valid(pages_map: *PagesMap, rules: *const RulesMap) !bool {
     }
 
     return true;
+}
+
+fn pages_sort(pages_map: *PagesMap, rules: *const RulesMap) void {
+    var rules_iter = rules.iterator();
+    while (rules_iter.next()) |rule| {
+        const before = rule.key_ptr.*;
+        for (rule.value_ptr.*.items) |after| {
+            if (pages_map.contains(before) and pages_map.contains(after)) {
+                const before_pos = pages_map.get(before).?;
+                const after_pos = pages_map.get(after).?;
+
+                if (before_pos > after_pos) {
+                    const before_pos_ptr = pages_map.getPtr(before).?;
+                    const after_pos_ptr = pages_map.getPtr(after).?;
+
+                    const old_before_pos = before_pos_ptr.*;
+                    before_pos_ptr.* = after_pos_ptr.*;
+                    after_pos_ptr.* = old_before_pos;
+                }
+            }
+        }
+    }
 }
 
 pub fn main() !void {
@@ -122,8 +149,8 @@ pub fn main() !void {
     var pages_lines_iter = std.mem.splitScalar(u8, pages_lines, '\n');
     var tally: i64 = 0;
     var pages_map = PagesMap.init(alloc);
-    defer pages_map.deinit();
 
+    defer pages_map.deinit();
     while (pages_lines_iter.next()) |pages_line| {
         if (libaoc.stringEmpty(pages_line)) {
             continue;
@@ -133,7 +160,10 @@ pub fn main() !void {
         try pages_map_insert_line(alloc, &pages_map, pages_line);
 
         const valid = try pages_valid(&pages_map, &rules_map);
-        if (valid) {
+        if (!valid) {
+            while (!try pages_valid(&pages_map, &rules_map)) {
+                pages_sort(&pages_map, &rules_map);
+            }
             tally += pages_map_middle(&pages_map);
         }
     }
