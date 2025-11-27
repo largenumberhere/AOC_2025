@@ -25,12 +25,13 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(exe);
 
-    // add shard advent of code library.
-    const shared_dep = b.dependency("zigaoc2025", .{
-        .optimize = optimize,
+    const zigaoc2025_package = b.dependency("zigaoc2025", .{
         .target = target,
+        .optimize = optimize,
     });
-    exe.root_module.addImport("libaoc", shared_dep.module("lib"));
+
+    const zigaoc2025_module = zigaoc2025_package.module("lib");
+    exe.root_module.addImport("zigaoc2025", zigaoc2025_module);
 
     const run_step = b.step("run", "Run the app");
 

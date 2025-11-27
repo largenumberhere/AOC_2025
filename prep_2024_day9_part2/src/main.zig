@@ -1,6 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const libaoc = @import("libaoc");
+const libaoc = @import("zigaoc2025");
 
 const BlockType = enum {
     file,
