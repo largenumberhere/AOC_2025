@@ -69,7 +69,7 @@ fn pages_valid(pages_map: *PagesMap, rules: *const RulesMap) !bool {
     return true;
 }
 
-fn pages_sort(pages_map: *PagesMap, rules: *const RulesMap) void {
+fn pages_bubble_sort(pages_map: *PagesMap, rules: *const RulesMap) void {
     var rules_iter = rules.iterator();
     while (rules_iter.next()) |rule| {
         const before = rule.key_ptr.*;
@@ -162,7 +162,7 @@ pub fn main() !void {
         const valid = try pages_valid(&pages_map, &rules_map);
         if (!valid) {
             while (!try pages_valid(&pages_map, &rules_map)) {
-                pages_sort(&pages_map, &rules_map);
+                pages_bubble_sort(&pages_map, &rules_map);
             }
             tally += pages_map_middle(&pages_map);
         }
