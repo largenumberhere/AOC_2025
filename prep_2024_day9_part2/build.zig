@@ -2,7 +2,8 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     const package_name = "prep_2024_day6_part2";
-
+    // b.verbose_llvm_ir = "";
+    // b.verbose = true;
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
@@ -12,6 +13,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const exe = b.addExecutable(.{
+        .use_llvm = true, // allows for llvm debugger to work correctly
         .name = package_name,
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),

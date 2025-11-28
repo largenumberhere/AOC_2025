@@ -7,6 +7,20 @@ const BlockType = enum {
     gap,
 };
 
+const FreeSpace = struct { position: usize };
+
+fn compareFreeSpace(_: void, left: FreeSpace, right: FreeSpace) std.math.Order {
+    if (left.position > right.position) {
+        return .gt;
+    } else if (left.position < right.position) {
+        return .lt;
+    } else if (left.position == right.position) {
+        return .eq;
+    } else unreachable;
+}
+
+const FreeQueue = std.PriorityQueue(FreeSpace, void, compareFreeSpace);
+
 const Block = struct { id: ?u64, block_type: BlockType };
 
 fn expand(alloc: Allocator, list: *std.ArrayList(Block), disk_map: []const u8) !void {
@@ -67,26 +81,24 @@ fn block_start(list: *const std.ArrayList(Block), block_index: usize) usize {
     return i;
 }
 
-fn find_first_gap(list: *const std.ArrayList(Block), block_size: usize) ?usize {
-    var i: usize = 0;
-    while (i < list.items.len) : (i += 1) {
-        const item = &list.items[i];
-        if (item.block_type != .gap) {
-            continue;
-        }
+fn find_first_free(block_size: usize, list: *const std.ArrayList(Block), free_queue: *FreeQueue) ?FreeSpace {
+    var iter = free_queue.iterator();
+    var best: ?FreeSpace = null;
 
-        const end = block_end(list, i);
-        const length = end - i;
-        if (length >= block_size) {
-            return i;
-        } else {
-            if (length > 1) {
-                i += (length - 1);
-            }
+    while (iter.next()) |item| {
+        const best_pos = if (best) |b| b.position else std.math.maxInt(usize);
+        const start = item.position;
+        const end = block_end(list, item.position);
+        const len = end - start;
+        if (len >= block_size and item.position < best_pos) {
+            best = item;
         }
     }
 
-    return null;
+    if (best) |b| {
+        std.debug.assert(list.items[b.position].block_type == .gap);
+    }
+    return best;
 }
 
 fn swap_slices(comptime T: type, left: []T, right: []T) !void {
@@ -101,7 +113,7 @@ fn swap_slices(comptime T: type, left: []T, right: []T) !void {
     }
 }
 
-fn defrag2(list: *std.ArrayList(Block)) void {
+fn defrag2(list: *std.ArrayList(Block), free_queue: *FreeQueue) !void {
     var i = list.items.len;
     while (i > 0) {
         i -= 1;
@@ -113,7 +125,10 @@ fn defrag2(list: *std.ArrayList(Block)) void {
         const start = block_start(list, i);
         const end = block_end(list, i);
         const len = end - start;
-        const gap_start = find_first_gap(list, len) orelse continue;
+
+        const best_free = find_first_free(len, list, free_queue) orelse continue;
+        const gap_start = best_free.position;
+        const gap_len = block_end(list, best_free.position) - block_start(list, best_free.position);
 
         if (gap_start > i) {
             continue;
@@ -123,6 +138,23 @@ fn defrag2(list: *std.ArrayList(Block)) void {
         const right = list.items[start..end];
 
         swap_slices(Block, left, right) catch @panic("invalid swap");
+
+        if (gap_len == len) {
+            var iter = free_queue.iterator();
+            var j: usize = 0;
+            var remove_pos: ?usize = null;
+            while (iter.next()) |f| : (j += 1) {
+                if (f.position == best_free.position) {
+                    remove_pos = j;
+                    break;
+                }
+            }
+
+            _ = free_queue.removeIndex(remove_pos.?);
+        } else {
+            try free_queue.update(best_free, FreeSpace{ .position = best_free.position + len });
+        }
+
         i = start;
     }
 }
@@ -157,6 +189,42 @@ fn debug_blocks(blocks: []const Block) void {
     std.debug.print("\n", .{});
 }
 
+fn load_frees(free_list: *FreeQueue, disk_map: std.ArrayList(Block)) !void {
+    var i: usize = 0;
+    while (i < disk_map.items.len) {
+        if (disk_map.items[i].block_type == .gap) {
+            const start = block_start(&disk_map, i);
+            const end = block_end(&disk_map, i);
+
+            try free_list.add(FreeSpace{ .position = start });
+
+            i = end;
+            continue;
+        }
+
+        i += 1;
+    }
+}
+
+fn debug_frees(free_list: FreeQueue) void {
+    std.debug.print("free list {}: ", .{free_list.count()});
+
+    for (free_list.items) |item| {
+        std.debug.print("[{}..]\n", .{item.position});
+    }
+}
+
+// free list needs:
+// - fast lookup size -> first block_pos
+// - fast random removal
+// - hashmap[min_size] pos  ?
+// - hashmap[max_size] pos ?
+// - linked list sorted by position(low to high) and ?
+
+// - list of ?list of free[space], where index1 = size, index2 = position
+// - shrink(size, position, newsize) function
+// - insert(size, position) function
+
 pub fn main() !void {
     libaoc.check_linkage();
 
@@ -177,9 +245,17 @@ pub fn main() !void {
     var list = std.ArrayList(Block).empty;
     defer list.deinit(alloc);
 
+    var free_queue = FreeQueue.init(alloc, {});
+    defer free_queue.deinit();
+
     try stdout.interface.print("Please wait. This one takes a minuite...\n", .{});
     try stdout.interface.flush();
     try expand(alloc, &list, file);
-    defrag2(&list);
+    try load_frees(&free_queue, list);
+    debug_frees(free_queue);
+    debug_blocks(list.items);
+    try defrag2(&list, &free_queue);
     try stdout.interface.print("{}\n", .{checksum1(list.items)});
+    debug_blocks(list.items);
+    debug_frees(free_queue);
 }
