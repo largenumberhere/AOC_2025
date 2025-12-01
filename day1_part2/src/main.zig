@@ -13,31 +13,35 @@ fn check_line(state: State, direction: i64, magnitude: i64) State {
     // if ending at zero, add 1 zeros
 
     const dial_max = 100;
-    const dial = state.dial;
-
-    const tally = direction * magnitude;
-
-    assert(tally != 0);
+    var dial = state.dial;
     var new_zeros: i64 = 0;
-    const full_rotations: i64 = @intCast(@abs(@divTrunc(tally, @as(i64, @abs(dial_max)))));
-    const partial: i64 = @intCast(@mod(@abs(tally), @as(i64, dial_max)));
-    new_zeros += full_rotations;
-    var tmp = (partial * direction) + dial;
-    if (tmp >= dial_max) {
-        new_zeros += 1;
-        tmp -= dial_max;
-    } else if (tmp < 0) {
-        new_zeros += 1;
-        tmp += dial_max;
-    }
-    if (tmp == 0) {
-        new_zeros += 1;
+    var tally: i64 = direction * magnitude;
+
+    while (tally > 0) {
+        dial += 1;
+        tally -= 1;
+        if (dial == dial_max) {
+            dial = 0;
+        }
+
+        if (dial == 0) {
+            new_zeros += 1;
+        }
     }
 
-    const new_dial = @mod(tmp, dial_max);
-    std.debug.print("{:3} + {:3} -> {:3} ({:3})\n", .{ dial, tally, new_dial, new_zeros });
+    while (tally < 0) {
+        dial -= 1;
+        tally += 1;
+        if (dial == -1) {
+            dial = 99;
+        }
 
-    return State{ .dial = new_dial, .new_zeros = new_zeros };
+        if (dial == 0) {
+            new_zeros += 1;
+        }
+    }
+
+    return State{ .dial = dial, .new_zeros = new_zeros };
 }
 
 fn part2(lines: []const []const u8) !i64 {
@@ -55,7 +59,7 @@ fn part2(lines: []const []const u8) !i64 {
         std.debug.assert(direction != 0);
 
         const line_result = check_line(State{ .dial = dial, .new_zeros = zeros_count }, direction, magnitude);
-
+        std.debug.print("{:3} + {:3} -> {:3} ({:3})\n", .{ dial, direction * magnitude, line_result.dial, line_result.new_zeros });
         zeros_count += line_result.new_zeros;
         dial = line_result.dial;
     }
@@ -85,7 +89,7 @@ pub fn main() !void {
         lines.deinit(alloc);
     }
 
-    try libaoc.readFileLinesToStrings(alloc, "/home/rose/Documents/programming/aoc_2025/day1_part2/sample_input.txt", &lines);
+    try libaoc.readFileLinesToStrings(alloc, "/home/rose/Documents/programming/aoc_2025/day1_part2/input.txt", &lines);
 
     const zeros_count = try part2(lines.items);
     std.debug.print("zeros_count = {}\n", .{zeros_count});
