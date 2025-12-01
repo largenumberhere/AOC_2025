@@ -59,7 +59,6 @@ fn part2(lines: []const []const u8) !i64 {
         std.debug.assert(direction != 0);
 
         const line_result = check_line(State{ .dial = dial, .new_zeros = zeros_count }, direction, magnitude);
-        std.debug.print("{:3} + {:3} -> {:3} ({:3})\n", .{ dial, direction * magnitude, line_result.dial, line_result.new_zeros });
         zeros_count += line_result.new_zeros;
         dial = line_result.dial;
     }
@@ -89,11 +88,8 @@ pub fn main() !void {
         lines.deinit(alloc);
     }
 
-    try libaoc.readFileLinesToStrings(alloc, "/home/rose/Documents/programming/aoc_2025/day1_part2/input.txt", &lines);
+    try libaoc.readFileLinesToStrings(alloc, "sample_input.txt", &lines);
 
     const zeros_count = try part2(lines.items);
-    std.debug.print("zeros_count = {}\n", .{zeros_count});
+    try stdout.interface.print("{}\n", .{zeros_count});
 }
-
-// 6142 is too high
-// 5604 too low

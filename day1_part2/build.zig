@@ -1,7 +1,7 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
-    const package_name = "prep_2024_day6_part2";
+    const package_name = "day1_part2";
     // b.verbose_llvm_ir = "";
     // b.verbose = true;
     const target = b.standardTargetOptions(.{});
