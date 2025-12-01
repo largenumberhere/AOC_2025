@@ -80,7 +80,7 @@ pub fn main() !void {
         lines.deinit(alloc);
     }
 
-    try libaoc.readFileLinesToStrings(alloc, "/home/rose/Documents/programming/aoc_2025/day1_part2/input.txt", &lines);
+    try libaoc.readFileLinesToStrings(alloc, "input.txt", &lines);
 
     const zeros_count = try part2(lines.items);
     std.debug.print("zeros_count = {}\n", .{zeros_count});
