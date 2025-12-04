@@ -7,6 +7,122 @@ test "hello" {
     std.debug.assert(true);
 }
 
+test "Vec2 test" {
+    const vec = Vec2.initUsize(0, 0);
+    const vec2 = vec.add(Vec2{ .x = 1, .y = 2 });
+    std.debug.assert(vec2.x == 1);
+    std.debug.assert(vec2.y == 2);
+}
+
+/// remove leading and trailing lines that are empty or contain only whitespace
+pub fn trimLines(alloc: std.mem.Allocator, lines: *std.ArrayList([]u8)) void {
+    while (lines.items.len >= 1) {
+        if (containsNonWhitespace(lines.items[0])) {
+            break;
+        }
+        const line = lines.orderedRemove(0); // horribly inefficient but easy
+        alloc.free(line);
+    }
+
+    while (lines.items.len >= 1) {
+        if (containsNonWhitespace(lines.items[lines.items.len - 1])) {
+            break;
+        }
+        const line = lines.orderedRemove(lines.items.len - 1);
+        alloc.free(line);
+    }
+}
+
+pub const Vec2 = struct {
+    x: i64,
+    y: i64,
+
+    pub fn add(self: Vec2, other: Vec2) Vec2 {
+        var out = self;
+        out.x += other.x;
+        out.y += other.y;
+
+        return out;
+    }
+
+    pub fn initUsize(x: usize, y: usize) Vec2 {
+        const out = Vec2{
+            .x = @intCast(x),
+            .y = @intCast(y),
+        };
+
+        return out;
+    }
+
+    pub fn inRange(self: *const Vec2, min_bounds: Vec2, max_bounds: Vec2) bool {
+        if (self.x < min_bounds.x) {
+            return false;
+        }
+
+        if (self.y < min_bounds.y) {
+            return false;
+        }
+
+        if (self.x >= max_bounds.x) {
+            return false;
+        }
+
+        if (self.y >= max_bounds.y) {
+            return false;
+        }
+
+        return true;
+    }
+
+    pub fn west(self: Vec2) Vec2 {
+        return self.add(Vec2{ .x = -1, .y = 0 });
+    }
+
+    pub fn east(self: Vec2) Vec2 {
+        return self.add(Vec2{ .x = 1, .y = 0 });
+    }
+
+    pub fn north(self: Vec2) Vec2 {
+        return self.add(Vec2{ .x = 0, .y = -1 });
+    }
+
+    pub fn south(self: Vec2) Vec2 {
+        return self.add(Vec2{ .x = 0, .y = 1 });
+    }
+
+    pub fn southEast(self: Vec2) Vec2 {
+        return self.add(Vec2{ .x = 1, .y = 1 });
+    }
+
+    pub fn southWest(self: Vec2) Vec2 {
+        return self.add(Vec2{ .x = -1, .y = 1 });
+    }
+
+    pub fn northWest(self: Vec2) Vec2 {
+        return self.add(Vec2{ .x = -1, .y = -1 });
+    }
+
+    pub fn northEast(self: Vec2) Vec2 {
+        return self.add(Vec2{ .x = 1, .y = -1 });
+    }
+
+    pub fn mooreNeighbours(self: Vec2) [8]Vec2 {
+        const arr = [8]Vec2{ self.north(), self.northEast(), self.east(), self.southEast(), self.south(), self.southWest(), self.west(), self.northWest() };
+
+        return arr;
+    }
+
+    pub fn xUsize(self: Vec2) usize {
+        std.debug.assert(self.x >= 0);
+        return @intCast(self.x);
+    }
+
+    pub fn yUsize(self: Vec2) usize {
+        std.debug.assert(self.y >= 0);
+        return @intCast(self.y);
+    }
+};
+
 pub fn readFileToString(alloc: std.mem.Allocator, path: []const u8) ![]u8 {
     var pwd = std.fs.cwd();
     const file = try pwd.openFile(path, std.fs.File.OpenFlags{});

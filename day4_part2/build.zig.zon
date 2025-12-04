@@ -34,7 +34,7 @@
     .dependencies = .{
         .zigaoc2025 = .{
             .url = "../zigaoc2025/",
-            .hash = "zigaoc2025-0.0.1-0O1fJq8kAABubyt4VizztnKwpEiGhbL0USUnliSZIWfR",
+            .hash = "zigaoc2025-0.0.4-0O1fJqgvAABcrA1kk_ZjvEg3tJGfkd0BeSHufJ_bOabx",
         },
     },
     .paths = .{
