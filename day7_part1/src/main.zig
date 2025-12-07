@@ -2,15 +2,12 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const libaoc = @import("libaoc");
 
-const print = std.debug.print;
-
-fn debug_lines(lines: std.ArrayList([]u8)) void {
-    for (lines.items) |line| {
-        std.debug.print("{s}\n", .{line});
-    }
-}
-
 pub fn main() !void {
+    const Errors = error{
+        UnsupportedSymbol,
+        UndefinedEdgeCase,
+    };
+
     libaoc.check_linkage();
 
     // buffer allocator
@@ -43,38 +40,46 @@ pub fn main() !void {
         for (0..lines[0].len) |j| {
             if (lines[i][j] == 'S' or lines[i][j] == '|') {
                 const can_look_down1 = (i < lines.len - 1);
-                const can_look_down2 = (i < lines.len - 2);
-                const can_look_left = j >= 1;
-                const can_look_right = j < lines[0].len - 1;
-
+                const down1 = i + 1;
                 if (!can_look_down1) {
                     continue;
+                } else if (lines[down1][j] == '|') {
+                    continue;
+                } else if (lines[down1][j] == '.') {
+                    lines[down1][j] = '|';
+                    continue;
+                } else if (lines[down1][j] != '^') {
+                    return Errors.UnsupportedSymbol;
                 }
 
-                if (lines[i + 1][j] == '^') {
-                    if (can_look_down2) {
-                        if (can_look_left or can_look_right) {
-                            splits_tally += 1;
+                const can_look_down2 = (i < lines.len - 2);
+                if (!can_look_down2) {
+                    return Errors.UndefinedEdgeCase;
+                }
 
-                            if (can_look_left) {
-                                lines[i + 2][j - 1] = '|';
-                            }
-                            if (can_look_right) {
-                                lines[i + 2][j + 1] = '|';
-                            }
-                        }
-                    } else {
-                        unreachable;
-                    }
-                } else if (lines[i + 1][j] == '.') {
-                    lines[i + 1][j] = '|';
-                } else if (lines[i + 1][j] == '|') {} else {
-                    std.debug.panic(" >>{c}<<\n", .{lines[i + 1][j]});
-                    unreachable;
+                const can_look_left = j >= 1;
+                const can_look_right = j < lines[0].len - 1;
+                const left = j - 1;
+                const right = j + 1;
+
+                if (can_look_left or can_look_right) {
+                    splits_tally += 1;
+                }
+
+                if (can_look_left) {
+                    lines[down1][left] = '|';
+                }
+
+                if (can_look_right) {
+                    lines[down1][right] = '|';
                 }
             }
         }
     }
-    std.debug.print("splits = {}\n", .{splits_tally});
-    debug_lines(lines_list);
+
+    for (lines) |line| {
+        try stdout.interface.print("{s}\n", .{line});
+    }
+    try stdout.interface.print("\n", .{});
+    try stdout.interface.print("splits count = {}\n", .{splits_tally});
 }
