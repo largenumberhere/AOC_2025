@@ -1,77 +1,75 @@
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 const AutoHashmap = std.AutoHashMap;
-const DebugArena = @import("debug_arena.zig").DebugArena;
 const libaoc = @import("libaoc");
 const std = @import("std");
-const Tuple = std.meta.Tuple;
 const PriorityQueue = std.PriorityQueue;
 
-// const TaggedVec3 = struct {
-//     vec: Vec3,
-//     pool_id: ?usize,
-//     pub fn initI64(x: i64, y: i64, z: i64) TaggedVec3 {
-//         const t = TaggedVec3{
-//             .vec = Vec3.initI64(x, y, z),
-//             .pool_id = null,
-//         };
+pub const DebugArena = struct {
+    debug_allocator: std.heap.DebugAllocator(.{}),
+    arena_allocator: std.heap.ArenaAllocator,
 
-//         return t;
-//     }
+    pub fn init(arena: *@This()) void {
+        arena.debug_allocator = std.heap.DebugAllocator(.{}).init;
+        arena.arena_allocator = std.heap.ArenaAllocator.init(arena.debug_allocator.allocator());
+    }
 
-//     fn vec3(self: TaggedVec3) Vec3 {
-//         return self.vec;
-//     }
-// };
+    pub fn deinit(self: *@This()) std.heap.Check {
+        self.arena_allocator.deinit();
+        const check = self.debug_allocator.deinit();
+        return check;
+    }
+
+    pub fn allocator(self: *@This()) Allocator {
+        return self.arena_allocator.allocator();
+    }
+};
+
+const Empty = struct {
+    const init = Empty{};
+};
 
 const Vec3 = struct {
     x: f64,
     y: f64,
     z: f64,
 
-    pub fn initI64(x: i64, y: i64, z: i64) Vec3 {
-        const vec = Vec3{ .x = @floatFromInt(x), .y = @floatFromInt(y), .z = @floatFromInt(z) };
+    pub fn initF64(x: f64, y: f64, z: f64) Vec3 {
+        const vec = Vec3{ .x = x, .y = y, .z = z };
+
         return vec;
     }
 
-    pub fn debug(self: Vec3) void {
-        std.debug.print("{:>8} {:>8} {:>8}\n", .{ self.x, self.y, self.z });
-    }
-
     pub fn distanceFrom(self: Vec3, other: Vec3) f64 {
+        const powf = struct {
+            fn powf(a: f64, b: f64) f64 {
+                return std.math.pow(f64, a, b);
+            }
+        }.powf;
+
         const sqrt = std.math.sqrt;
-        const pow = std.math.pow;
 
         // https://www.cuemath.com/euclidean-distance-formula/
         // d = √[ (x2 – x1)2 + (y2 – y1)2]
         // d = sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2;
 
         const out = sqrt( //
-            pow(f64, other.x - self.x, 2) +
-                pow(f64, other.y - self.y, 2) +
-                pow(f64, other.z - self.z, 2));
+            powf(other.x - self.x, 2) +
+                powf(other.y - self.y, 2) +
+                powf(other.z - self.z, 2));
         return out;
-    }
-
-    pub fn eql(self: Vec3, other: Vec3) bool {
-        return (self.x == other.x and self.y == other.y and self.z == other.z);
     }
 };
 
-const Coordinates = std.ArrayList(Vec3);
 const Vec3PairHandle = struct {
     one: usize,
     two: usize,
-    fn eql(left: Vec3PairHandle, right: Vec3PairHandle) bool {
-        return left.one == right.one and left.two == right.two;
-    }
 };
 
-fn appendCombinationsHandles(alloc: Allocator, coordinates: []const Vec3, distances: *ArrayList(Vec3PairHandle)) !void {
-    var duplicates_map = AutoHashmap(Vec3PairHandle, bool).init(alloc);
+fn appendCombinationsHandles(alloc: Allocator, coordinates: []const Vec3, handles: *ArrayList(Vec3PairHandle)) !void {
+    var duplicates_map = AutoHashmap(Vec3PairHandle, Empty).init(alloc);
     defer duplicates_map.deinit();
 
-    // append all the items
     for (0..coordinates.len) |i| {
         for (0..coordinates.len) |j| {
             if (i == j) {
@@ -87,17 +85,17 @@ fn appendCombinationsHandles(alloc: Allocator, coordinates: []const Vec3, distan
                 continue;
             }
 
-            try duplicates_map.put(handle, true);
-            try duplicates_map.put(handle_reveresed, true);
-            try distances.append(alloc, handle);
+            try duplicates_map.put(handle, Empty.init);
+            try duplicates_map.put(handle_reveresed, Empty.init);
+            try handles.append(alloc, handle);
         }
     }
 }
 
-fn sortHandlesByDistance(coordinates: []const Vec3, distances: *ArrayList(Vec3PairHandle)) void {
-    const SortHandlesByDistancesContext = struct {
+fn sortHandlesByCoordinatePairDistances(coordinates: []const Vec3, handles: *ArrayList(Vec3PairHandle)) void {
+    const HandlesSortingContext = struct {
         distances_ref: *ArrayList(Vec3PairHandle),
-        items_ref: []const Vec3,
+        coordinates_ref: []const Vec3,
 
         pub fn swap(self: *const @This(), cur1: usize, cur2: usize) void {
             const distances_ref = self.distances_ref;
@@ -108,24 +106,24 @@ fn sortHandlesByDistance(coordinates: []const Vec3, distances: *ArrayList(Vec3Pa
         }
 
         pub fn lessThan(self: *const @This(), cur1: usize, cur2: usize) bool {
-            const items_ref = self.items_ref;
+            const coordinate_ref = self.coordinates_ref;
             const distances_ref = self.distances_ref;
 
             const left_handles = distances_ref.items[cur1];
             const right_handles = distances_ref.items[cur2];
 
-            const left_distance = items_ref[left_handles.one].distanceFrom(items_ref[left_handles.two]);
-            const right_distqance = items_ref[right_handles.one].distanceFrom(items_ref[right_handles.two]);
+            const left_distance = coordinate_ref[left_handles.one].distanceFrom(coordinate_ref[left_handles.two]);
+            const right_distqance = coordinate_ref[right_handles.one].distanceFrom(coordinate_ref[right_handles.two]);
 
             return left_distance < right_distqance;
         }
     };
 
-    const context = SortHandlesByDistancesContext{
-        .distances_ref = distances,
-        .items_ref = coordinates,
+    const context = HandlesSortingContext{
+        .distances_ref = handles,
+        .coordinates_ref = coordinates,
     };
-    std.sort.heapContext(0, distances.items.len, context);
+    std.sort.heapContext(0, handles.items.len, context);
 }
 
 fn appendCoordinates(alloc: Allocator, input: []u8, coordinates: *ArrayList(Vec3)) !void {
@@ -137,15 +135,14 @@ fn appendCoordinates(alloc: Allocator, input: []u8, coordinates: *ArrayList(Vec3
         }
 
         var part_iter = std.mem.splitScalar(u8, line, ',');
-        const x_str = part_iter.next().?;
-        const y_str = part_iter.next().?;
-        const z_str = part_iter.next().?;
 
-        const x = try std.fmt.parseInt(i64, x_str, 10);
-        const y = try std.fmt.parseInt(i64, y_str, 10);
-        const z = try std.fmt.parseInt(i64, z_str, 10);
+        var xyz: [3]f64 = undefined;
+        for (0..xyz.len) |i| {
+            const number_str = part_iter.next().?;
+            xyz[i] = try std.fmt.parseFloat(f64, number_str);
+        }
 
-        const pos: Vec3 = Vec3.initI64(x, y, z);
+        const pos: Vec3 = Vec3.initF64(xyz[0], xyz[1], xyz[2]);
         try coordinates.append(alloc, pos);
     }
 }
@@ -163,6 +160,7 @@ const UnionFind = struct {
             .list = items,
         };
     }
+
     fn deinit(self: *@This(), alloc: Allocator) void {
         self.list.deinit(alloc);
     }
@@ -254,69 +252,14 @@ const UnionFind = struct {
 
         return iter;
     }
-
-    fn debugGroups(self: *const @This()) void {
-        std.debug.print("Groups:\n", .{});
-        for (0..self.list.items.len) |possible_id| {
-            var ran_zero_times = true;
-            for (0..self.list.items.len) |i| {
-                const item_group_id = self.get_id(i).?;
-                const is_in_group = item_group_id == possible_id;
-                if (is_in_group and ran_zero_times) {
-                    std.debug.print("  Group {:<3} contains: ", .{possible_id});
-                    ran_zero_times = false;
-                }
-
-                if (is_in_group) {
-                    std.debug.print("({:0>2}), ", .{
-                        i,
-                    });
-                }
-            }
-
-            if (!ran_zero_times) {
-                std.debug.print("\n", .{});
-            }
-        }
-    }
-
-    fn debugGroups2(self: *const @This(), vecs: []const Vec3) void {
-        std.debug.print("Groups:\n", .{});
-        for (0..self.list.items.len) |possible_id| {
-            var ran_zero_times = true;
-            for (0..self.list.items.len) |i| {
-                const item_group_id = self.get_id(i).?;
-                const is_in_group = item_group_id == possible_id;
-                if (is_in_group and ran_zero_times) {
-                    std.debug.print("  Group {:<3} contains:  ", .{possible_id});
-                    ran_zero_times = false;
-                }
-
-                if (is_in_group) {
-                    std.debug.print("{:>3} {:>3} {:>3}, {s:>3}", .{ vecs[i].x, vecs[i].y, vecs[i].z, "" });
-                }
-            }
-
-            if (!ran_zero_times) {
-                std.debug.print("\n", .{});
-            }
-        }
-    }
 };
 
 const Circuit = struct {
     id: usize,
     size: usize,
 };
-fn largest3Circuits(alloc: Allocator, union_find: *const UnionFind) ![3]Circuit {
-    // find largest circuit sizes
-
+fn largest3Circuits(temp_alloc: Allocator, union_find: *const UnionFind) ![3]Circuit {
     var id_iter = union_find.iter_group_ids();
-    const Empty = struct {
-        fn init() @This() {
-            return @This(){};
-        }
-    };
 
     const compare_func = struct {
         fn compare_func(context: Empty, left: Circuit, right: Circuit) std.math.Order {
@@ -333,8 +276,11 @@ fn largest3Circuits(alloc: Allocator, union_find: *const UnionFind) ![3]Circuit 
         }
     }.compare_func;
 
-    var queue = PriorityQueue(Circuit, Empty, compare_func).init(alloc, Empty.init());
-    var sizes = AutoHashmap(usize, Empty).init(alloc);
+    var queue = PriorityQueue(Circuit, Empty, compare_func).init(temp_alloc, Empty.init);
+    defer queue.deinit();
+
+    var sizes = AutoHashmap(usize, Empty).init(temp_alloc);
+    defer sizes.deinit();
 
     while (id_iter.next()) |circuit_id| {
         var member_iter = union_find.group_member_iter(circuit_id);
@@ -343,11 +289,10 @@ fn largest3Circuits(alloc: Allocator, union_find: *const UnionFind) ![3]Circuit 
             circuit_size += 1;
         }
 
-        std.debug.print("circuit {} has size {}\n", .{ circuit_id, circuit_size });
         if (sizes.contains(circuit_size)) {
             continue;
         } else {
-            try sizes.put(circuit_size, Empty.init());
+            try sizes.put(circuit_size, Empty.init);
         }
 
         const circuit = Circuit{
@@ -358,10 +303,55 @@ fn largest3Circuits(alloc: Allocator, union_find: *const UnionFind) ![3]Circuit 
         try queue.add(circuit);
     }
     const largest_circuits = [3]Circuit{ queue.remove(), queue.remove(), queue.remove() };
-    queue.deinit();
-    sizes.deinit();
 
     return largest_circuits;
+}
+
+const StdoutWriter = struct {
+    buffer: [1024]u8,
+    stdout: std.fs.File,
+    writer: std.fs.File.Writer,
+
+    fn init(self: *@This()) void {
+        @memset(self.buffer[0..], 0);
+        self.stdout = std.fs.File.stdout();
+        self.writer = self.stdout.writer(self.buffer[0..]);
+    }
+
+    fn deinit(self: *@This()) !void {
+        return self.writer.interface.flush();
+    }
+
+    fn interface(self: *@This()) *std.io.Writer {
+        return &self.writer.interface;
+    }
+
+    fn print(self: *@This(), comptime fmt: []const u8, args: anytype) !void {
+        return self.writer.interface.print(fmt, args);
+    }
+
+    fn printFlushed(self: *@This(), comptime fmt: []const u8, args: anytype) !void {
+        try self.writer.interface.print(fmt, args);
+        try self.writer.interface.flush();
+    }
+};
+
+fn joinClosest(n: usize, groups: *UnionFind, shortest_pair_handles: []const Vec3PairHandle) void {
+    var cursor: usize = 0;
+
+    for (0..n) |_| {
+        const handle_to_closest_pair = shortest_pair_handles[cursor];
+        cursor += 1;
+
+        const left_handle = handle_to_closest_pair.one;
+        const right_handle = handle_to_closest_pair.two;
+
+        if (groups.get_id(left_handle) == groups.get_id(right_handle)) {
+            continue;
+        }
+
+        groups.join(left_handle, right_handle);
+    }
 }
 
 pub fn main() !void {
@@ -372,54 +362,29 @@ pub fn main() !void {
     const alloc = debug_arena.allocator();
     defer _ = debug_arena.deinit();
 
-    // // stdout
-    // var print_buffer = [1]u8{0} ** 1024;
-    // const stdout_fd = std.fs.File.stdout();
-    // var stdout = stdout_fd.writer(print_buffer[0..]);
-    // defer stdout.interface.flush() catch {};
+    var stdout: StdoutWriter = undefined;
+    stdout.init();
+    defer stdout.deinit() catch {};
 
+    try stdout.printFlushed("Parsing coordinates\n", .{});
     const string = try libaoc.readFileToString(alloc, "input.txt");
+    defer alloc.free(string);
     var coordinates = ArrayList(Vec3).empty;
     try appendCoordinates(alloc, string, &coordinates);
 
-    var union_find = try UnionFind.init(alloc, coordinates.items.len);
-    defer union_find.deinit(alloc);
-
-    for (coordinates.items, 0..) |coord, i| {
-        std.debug.print("coord {} is {} {} {}\n", .{ i, coord.x, coord.y, coord.z });
-    }
-    std.debug.print("\n", .{});
-
+    try stdout.printFlushed("Iterating coordinates\n", .{});
     var handles_to_coordinates = ArrayList(Vec3PairHandle).empty;
     defer handles_to_coordinates.deinit(alloc);
     try appendCombinationsHandles(alloc, coordinates.items, &handles_to_coordinates);
-    sortHandlesByDistance(coordinates.items, &handles_to_coordinates);
+    sortHandlesByCoordinatePairDistances(coordinates.items, &handles_to_coordinates);
 
-    const max = 1000;
-    var shortest_handles_cursor: usize = 0;
-    for (0..max) |_| {
-        const handle_to_closest_pair = handles_to_coordinates.items[shortest_handles_cursor];
-        shortest_handles_cursor += 1;
+    try stdout.printFlushed("Linking coordinates\n", .{});
+    var union_find = try UnionFind.init(alloc, coordinates.items.len);
+    defer union_find.deinit(alloc);
+    joinClosest(1000, &union_find, handles_to_coordinates.items);
 
-        const left_handle = handle_to_closest_pair.one;
-        const right_handle = handle_to_closest_pair.two;
-
-        // skip already connected pairs
-        if (union_find.get_id(left_handle) == union_find.get_id(right_handle)) {
-            continue;
-        }
-
-        std.debug.print("Joining {any} to {any}", .{ left_handle, right_handle });
-        union_find.join(left_handle, right_handle);
-    }
-    union_find.debugGroups();
-
+    try stdout.printFlushed("Finding largest\n", .{});
     const largest_circuits = try largest3Circuits(alloc, &union_find);
-    for (largest_circuits) |circuit| {
-        std.debug.print("Circuit {any}\n", .{circuit});
-    }
-
     const result = largest_circuits[0].size * largest_circuits[1].size * largest_circuits[2].size;
-
-    std.debug.print("result {}\n", .{result});
+    try stdout.printFlushed("Result = {}\n", .{result});
 }
