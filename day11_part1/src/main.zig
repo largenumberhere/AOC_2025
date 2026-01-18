@@ -75,7 +75,7 @@ fn append_rules(alloc: Allocator, file_lines: std.ArrayList([]u8), rules: *Rules
 pub fn main() !void {
     libaoc.check_linkage();
 
-    // Arena allocator allows the omission of many calls to free in this program
+    // Arena allocator allows the omission of many calls to free in this short-running program
     var debug_alloc = std.heap.DebugAllocator(.{}){};
     defer _ = debug_alloc.deinit();
     var arena = std.heap.ArenaAllocator.init(debug_alloc.allocator());

@@ -1,0 +1,276 @@
+
+// const JoinPool = struct {
+//     joins: std.AutoHashMap(usize, usize), // item_pos -> group_id
+//     id_counter: usize,
+
+//     fn init(alloc: Allocator, item_count: usize) !JoinPool {
+//         var pool = JoinPool{ //
+//             .joins = .init(alloc),
+//             .id_counter = 0,
+//         };
+//         for (0..item_count) |i| {
+//             try pool.joins.put(i, pool.id_counter);
+//             pool.id_counter += 1;
+//         }
+
+//         return pool;
+//     }
+
+//     fn join(self: *@This(), pos1: usize, pos2: usize) void {
+//         const group_id_1 = self.joins.get(pos1).?;
+//         const group_id_2 = self.joins.get(pos2).?;
+//         const next_id = self.id_counter;
+//         self.id_counter += 1;
+
+//         var iter = self.joins.iterator();
+//         while (iter.next()) |pair| {
+//             if (pair.value_ptr.* == group_id_1 or pair.value_ptr.* == group_id_2) {
+//                 pair.value_ptr.* = next_id;
+//             }
+//         }
+//     }
+
+//     fn get_pool_id(self: *const @This(), item_pos: usize) ?usize {
+//         const id = self.joins.get(item_pos);
+//         return id;
+//     }
+
+//     fn count_non_empty_groups(self: *const @This()) usize {
+//         var count: usize = 0;
+//         for (0..self.id_counter) |i| {
+//             var id_exists = false;
+//             var iter = self.joins.iterator();
+//             while (iter.next()) |pair| {
+//                 if (pair.value_ptr.* == i) {
+//                     id_exists = true;
+//                     break;
+//                 }
+//             }
+
+//             if (id_exists) {
+//                 count += 1;
+//             }
+//         }
+//         return count;
+//     }
+
+//     fn debugGroups(self: *const @This()) void {
+//         for (0..self.id_counter) |i| {
+//             var count_of_id: usize = 0;
+//             var iter = self.joins.iterator();
+//             while (iter.next()) |pair| {
+//                 if (pair.value_ptr.* == i) {
+//                     count_of_id += 1;
+//                     if (count_of_id == 1) {
+//                         std.debug.print("Group {} contains:", .{i});
+//                     }
+
+//                     std.debug.print("{}, ", .{pair.key_ptr.*});
+//                 }
+//             }
+//             if (count_of_id > 0) {
+//                 std.debug.print("\n", .{});
+//             }
+//         }
+//     }
+// };
+
+
+
+const UsizePair = Tuple(&.{ usize, usize });
+
+fn nextSmallestPair(items: []const Vec3, pool: *const UnionFind, item1_pos: usize, item2_pos: usize) error{TooFewItems}!UsizePair {
+    var working_item1 = item1_pos;
+    var working_item2 = item2_pos;
+    var working_distance = items[working_item1].distanceFrom(items[working_item2]);
+
+    var i: usize = 0;
+    while (i < items.len) : (i += 1) {
+        var j: usize = 0;
+
+        while (j < items.len) : (j += 1) {
+            if (i == j) {
+                continue;
+            }
+
+            const same_pool = pool.get_pool_id(i) == pool.get_pool_id(j);
+            const left = items[i];
+            const right = items[j];
+
+            const distance = left.distanceFrom(right);
+            if (distance < working_distance) {
+                
+            }
+        }
+    }
+}
+
+
+
+fn smallest_pair(items: []const Vec3, pool: *const UnionFind) error{TooFewItems}!Tuple(&.{ usize, usize }) {
+    if (items.len < 2) {
+        return error{TooFewItems}.TooFewItems;
+    }
+    var working_item1: ?usize = null;
+    var working_item2: ?usize = null;
+    var working_distance: f64 = std.math.floatMax(f64);
+
+    var i: usize = 0;
+    while (i < items.len) : (i += 1) {
+        var j: usize = 0;
+        while (j < items.len) : (j += 1) {
+            if (i == j) {
+                continue;
+            }
+
+            const same_pool = pool.get_id(i) == pool.get_id(j);
+            if (same_pool) {
+                continue;
+            }
+
+            const left = items[i];
+            const right = items[j];
+
+            const diff = left.distanceFrom(right);
+
+            if (diff < working_distance) {
+                working_distance = diff;
+                working_item1 = i;
+                working_item2 = j;
+            }
+        }
+    }
+
+    return .{ working_item1.?, working_item2.? };
+}
+
+
+
+fn appendShortestDistances(alloc: Allocator, items: []const Vec3, distances: *ArrayList(Vec3PairHandle)) !void {
+    var duplicates_map = AutoHashmap(Vec3PairHandle, bool).init(alloc);
+
+    // append all the items
+    for (0..items.len) |i| {
+        for (0..items.len) |j| {
+            if (i == j) {
+                continue;
+            }
+
+            const handle = Vec3PairHandle{ .one = i, .two = j };
+            const handle_reveresed = Vec3PairHandle{ .one = handle.two, .two = handle.one };
+
+            // ignore duplicates
+            const is_duplicate = duplicates_map.contains(handle) or duplicates_map.contains(handle_reveresed);
+            if (is_duplicate) {
+                continue;
+            }
+
+            try duplicates_map.put(handle, true);
+            try duplicates_map.put(handle_reveresed, true);
+            try distances.append(alloc, handle);
+        }
+    }
+    duplicates_map.deinit();
+
+    const SortHandlesByDistancesContext = struct {
+        distances_ref: *ArrayList(Vec3PairHandle),
+        items_ref: []const Vec3,
+
+        pub fn swap(self: *const @This(), cur1: usize, cur2: usize) void {
+            const distances_ref = self.distances_ref;
+
+            const left_handles = distances_ref.items[cur1];
+            distances_ref.items[cur1] = distances_ref.items[cur2];
+            distances_ref.items[cur2] = left_handles;
+        }
+
+        pub fn lessThan(self: *const @This(), cur1: usize, cur2: usize) bool {
+            const items_ref = self.items_ref;
+            const distances_ref = self.distances_ref;
+
+            const left_handles = distances_ref.items[cur1];
+            const right_handles = distances_ref.items[cur2];
+
+            const left_distance = items_ref[left_handles.one].distanceFrom(items_ref[left_handles.two]);
+            const right_distqance = items_ref[right_handles.one].distanceFrom(items_ref[right_handles.two]);
+
+            return left_distance < right_distqance;
+        }
+    };
+    const context = SortHandlesByDistancesContext{
+        .distances_ref = distances,
+        .items_ref = items,
+    };
+
+    std.debug.print("sorting\n", .{});
+    std.sort.heapContext(0, distances.items.len, context);
+    std.debug.print("sorted\n", .{});
+}
+
+
+// const TaggedVec3 = struct {
+//     vec: Vec3,
+//     pool_id: ?usize,
+//     pub fn initI64(x: i64, y: i64, z: i64) TaggedVec3 {
+//         const t = TaggedVec3{
+//             .vec = Vec3.initI64(x, y, z),
+//             .pool_id = null,
+//         };
+
+//         return t;
+//     }
+
+//     fn vec3(self: TaggedVec3) Vec3 {
+//         return self.vec;
+//     }
+// };
+
+
+
+    fn debugGroups(self: *const @This()) void {
+        std.debug.print("Groups:\n", .{});
+        for (0..self.list.items.len) |possible_id| {
+            var ran_zero_times = true;
+            for (0..self.list.items.len) |i| {
+                const item_group_id = self.get_id(i).?;
+                const is_in_group = item_group_id == possible_id;
+                if (is_in_group and ran_zero_times) {
+                    std.debug.print("  Group {:<3} contains: ", .{possible_id});
+                    ran_zero_times = false;
+                }
+
+                if (is_in_group) {
+                    std.debug.print("({:0>2}), ", .{
+                        i,
+                    });
+                }
+            }
+
+            if (!ran_zero_times) {
+                std.debug.print("\n", .{});
+            }
+        }
+    }
+
+    fn debugGroups2(self: *const @This(), vecs: []const Vec3) void {
+        std.debug.print("Groups:\n", .{});
+        for (0..self.list.items.len) |possible_id| {
+            var ran_zero_times = true;
+            for (0..self.list.items.len) |i| {
+                const item_group_id = self.get_id(i).?;
+                const is_in_group = item_group_id == possible_id;
+                if (is_in_group and ran_zero_times) {
+                    std.debug.print("  Group {:<3} contains:  ", .{possible_id});
+                    ran_zero_times = false;
+                }
+
+                if (is_in_group) {
+                    std.debug.print("{:>3} {:>3} {:>3}, {s:>3}", .{ vecs[i].x, vecs[i].y, vecs[i].z, "" });
+                }
+            }
+
+            if (!ran_zero_times) {
+                std.debug.print("\n", .{});
+            }
+        }
+    }
