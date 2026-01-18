@@ -1,3 +1,5 @@
+// NB: This branch is not a working solution!
+
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const libaoc = @import("zigaoc2025");
@@ -7,7 +9,7 @@ const BlockType = enum {
     gap,
 };
 
-const FreeSpace = struct { position: usize };
+const FreeSpace = struct { position: usize = 0, length: usize = 0 };
 
 fn compareFreeSpace(_: void, left: FreeSpace, right: FreeSpace) std.math.Order {
     if (left.position > right.position) {
@@ -19,7 +21,76 @@ fn compareFreeSpace(_: void, left: FreeSpace, right: FreeSpace) std.math.Order {
     } else unreachable;
 }
 
-const FreeQueue = std.PriorityQueue(FreeSpace, void, compareFreeSpace);
+const FreeQueue = struct {
+    const Self = @This();
+
+    const FreeList = std.AutoHashMap(usize, usize);
+    free_list: FreeList,
+
+    pub fn init(alloc: Allocator) Self {
+        const self = Self{ .free_list = FreeList.init(alloc) };
+        return self;
+    }
+
+    pub fn deinit(
+        self: *Self,
+    ) void {
+        self.free_list.deinit();
+    }
+
+    pub fn insert(self: *Self, position: usize, length: usize) !void {
+        if (self.free_list.contains(position)) {
+            if (self.free_list.get(position) != length) {
+                unreachable;
+            }
+        } else {
+            try self.free_list.put(position, length);
+        }
+    }
+
+    pub fn move_forward(self: *Self, old_position: usize, length: usize, new_length: usize) void {
+        const entry = self.free_list.getEntry(old_position).?;
+        std.debug.assert(entry.value_ptr.* == length);
+        entry.value_ptr.* = new_length;
+        entry.key_ptr.* = old_position + (length - new_length);
+
+        std.debug.assert(self.free_list.remove(old_position));
+    }
+
+    pub fn remove(self: *Self, position: usize, length: usize) void {
+        std.debug.assert(self.free_list.get(position) == length);
+        std.debug.assert(self.free_list.remove(position));
+    }
+
+    pub fn find_first(self: *Self, max_position: usize, min_length: usize) ?FreeSpace {
+        var iter = self.free_list.iterator();
+        var best: ?FreeSpace = null;
+        while (iter.next()) |item| {
+            const new_space = FreeSpace{ .length = item.value_ptr.*, .position = item.key_ptr.* };
+            if (new_space.position >= max_position or new_space.length < min_length) {
+                continue;
+            }
+            if (best) |b| {
+                if (new_space.position < b.position) {
+                    best = new_space;
+                }
+            } else {
+                best = new_space;
+            }
+        }
+
+        return best;
+    }
+
+    pub fn debug(self: *const Self) void {
+        var iter = self.free_list.iterator();
+        std.debug.print("{s} {s}", .{ @typeName(Self), "{\n" });
+        while (iter.next()) |item| {
+            std.debug.print("    {} : {}\n", .{ item.key_ptr.*, item.value_ptr.* });
+        }
+        std.debug.print("{s}", .{"}"});
+    }
+};
 
 const Block = struct { id: ?u64, block_type: BlockType };
 
@@ -81,26 +152,6 @@ fn block_start(list: *const std.ArrayList(Block), block_index: usize) usize {
     return i;
 }
 
-fn find_first_free(block_size: usize, list: *const std.ArrayList(Block), free_queue: *FreeQueue) ?FreeSpace {
-    var iter = free_queue.iterator();
-    var best: ?FreeSpace = null;
-
-    while (iter.next()) |item| {
-        const best_pos = if (best) |b| b.position else std.math.maxInt(usize);
-        const start = item.position;
-        const end = block_end(list, item.position);
-        const len = end - start;
-        if (len >= block_size and item.position < best_pos) {
-            best = item;
-        }
-    }
-
-    if (best) |b| {
-        std.debug.assert(list.items[b.position].block_type == .gap);
-    }
-    return best;
-}
-
 fn swap_slices(comptime T: type, left: []T, right: []T) !void {
     if (left.len != right.len) {
         return error{SliceLengthMismatch}.SliceLengthMismatch;
@@ -124,9 +175,9 @@ fn defrag2(list: *std.ArrayList(Block), free_queue: *FreeQueue) !void {
 
         const start = block_start(list, i);
         const end = block_end(list, i);
-        const len = end - start;
+        const file_len = end - start;
 
-        const best_free = find_first_free(len, list, free_queue) orelse continue;
+        const best_free = free_queue.find_first(i, file_len) orelse continue;
         const gap_start = best_free.position;
         const gap_len = block_end(list, best_free.position) - block_start(list, best_free.position);
 
@@ -134,25 +185,18 @@ fn defrag2(list: *std.ArrayList(Block), free_queue: *FreeQueue) !void {
             continue;
         }
 
-        const left = list.items[gap_start .. gap_start + len];
+        const left = list.items[gap_start .. gap_start + file_len];
         const right = list.items[start..end];
-
         swap_slices(Block, left, right) catch @panic("invalid swap");
 
-        if (gap_len == len) {
-            var iter = free_queue.iterator();
-            var j: usize = 0;
-            var remove_pos: ?usize = null;
-            while (iter.next()) |f| : (j += 1) {
-                if (f.position == best_free.position) {
-                    remove_pos = j;
-                    break;
-                }
-            }
-
-            _ = free_queue.removeIndex(remove_pos.?);
+        if (gap_len == file_len) {
+            free_queue.remove(best_free.position, best_free.length);
+            debug_blocks(list.items);
+            debug_frees(free_queue.*);
         } else {
-            try free_queue.update(best_free, FreeSpace{ .position = best_free.position + len });
+            debug_blocks(list.items);
+            debug_frees(free_queue.*);
+            free_queue.move_forward(best_free.position, best_free.length, best_free.length - file_len);
         }
 
         i = start;
@@ -196,9 +240,8 @@ fn load_frees(free_list: *FreeQueue, disk_map: std.ArrayList(Block)) !void {
             const start = block_start(&disk_map, i);
             const end = block_end(&disk_map, i);
 
-            try free_list.add(FreeSpace{ .position = start });
-
-            i = end;
+            try free_list.insert(start, end - start);
+            i += (end - start);
             continue;
         }
 
@@ -207,11 +250,7 @@ fn load_frees(free_list: *FreeQueue, disk_map: std.ArrayList(Block)) !void {
 }
 
 fn debug_frees(free_list: FreeQueue) void {
-    std.debug.print("free list {}: ", .{free_list.count()});
-
-    for (free_list.items) |item| {
-        std.debug.print("[{}..]\n", .{item.position});
-    }
+    free_list.debug();
 }
 
 // free list needs:
@@ -239,13 +278,13 @@ pub fn main() !void {
     var stdout = stdout_fd.writer(print_buffer[0..]);
     defer stdout.interface.flush() catch {};
 
-    const file_contents = try libaoc.readFileToString(alloc, "sample_input.txt");
+    const file_contents = try libaoc.readFileToString(alloc, "/home/rose/Documents/programming/aoc_2025/prep_2024_day9_part2/sample_input.txt");
     defer alloc.free(file_contents);
     const file = std.mem.trim(u8, file_contents, " \n\r\t");
     var list = std.ArrayList(Block).empty;
     defer list.deinit(alloc);
 
-    var free_queue = FreeQueue.init(alloc, {});
+    var free_queue = FreeQueue.init(alloc);
     defer free_queue.deinit();
 
     try stdout.interface.print("Please wait. This one takes a minuite...\n", .{});
