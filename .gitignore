@@ -12,3 +12,6 @@ zig-out/
 # AOC secrets
 #sample_input.txt
 input.txt
+
+# Temporary scribbles text file
+.junk

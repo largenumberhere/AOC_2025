@@ -6,10 +6,17 @@ const ArrayList = std.ArrayList;
 const DebugArena = struct {
     debug_allocator: std.heap.DebugAllocator(.{}),
     arena_allocator: std.heap.ArenaAllocator,
+    assertions: bool,
 
-    fn init(arena: *@This()) void {
+    fn initFast(arena: *@This()) void {
         arena.debug_allocator = std.heap.DebugAllocator(.{}).init;
         arena.arena_allocator = std.heap.ArenaAllocator.init(arena.debug_allocator.allocator());
+        arena.assertions = false;
+    }
+
+    fn initAssert(arena: *@This()) void {
+        arena.initFast();
+        arena.assertions = true;
     }
 
     fn deinit(self: *@This()) std.heap.Check {
@@ -19,20 +26,69 @@ const DebugArena = struct {
     }
 
     fn allocator(self: *@This()) Allocator {
-        return self.arena_allocator.allocator();
+        if (self.assertions) {
+            return self.debug_allocator.allocator();
+        } else {
+            return self.arena_allocator.allocator();
+        }
     }
 };
 
 const Shape = struct {
+    const n = 3;
     id: usize,
-    volume: usize,
-    raw_lines: ArrayList([]const u8),
+    lines: ArrayList(std.ArrayList(u8)),
+    tmp_buffer: [n][n]u8,
+
+    fn area(self: *const @This()) usize {
+        var vol: usize = 0;
+        for (self.lines.items) |line| {
+            for (line.items) |chr| {
+                if (chr == '#') {
+                    vol += 1;
+                }
+            }
+        }
+
+        return vol;
+    }
+
+    fn init(shape: *Shape, id: usize, lines: ArrayList(ArrayList(u8))) void {
+        const tmp = [_][3]u8{ [_]u8{ 0, 0, 0 }, [_]u8{ 0, 0, 0 }, [_]u8{ 0, 0, 0 } };
+
+        shape.* = .{ .id = id, .lines = lines, .tmp_buffer = tmp };
+        std.debug.assert(lines.items.len == Shape.n and lines.items[0].items.len == Shape.n);
+    }
+
+    fn deinit(shape: *Shape, lines_out: *ArrayList(ArrayList(u8))) void {
+        lines_out.* = shape.lines;
+    }
+
+    fn debug(shape: Shape) void {
+        std.debug.print("Shape {{ id={}, volume={}, lines = {{\n", .{ shape.id, shape.area() });
+        for (shape.lines.items) |line| {
+            std.debug.print("  \"{s}\"\n", .{line.items});
+        }
+        std.debug.print("}}  }}\n", .{});
+    }
 };
 
 const Region = struct {
     width: usize,
     height: usize,
     present_counts: ArrayList(usize),
+
+    fn deinit(self: Region, alloc: Allocator) void {
+        var presents = self.present_counts;
+        presents.deinit(alloc);
+    }
+
+    fn debug(self: *const Region) void {
+        std.debug.print("Region width={}, height={}, \n", .{ self.width, self.height });
+        for (0.., self.present_counts.items) |present_id, present_count| {
+            std.debug.print("   requires {:>3} of shape {:>3} \n", .{ present_count, present_id });
+        }
+    }
 };
 
 fn appendValues(alloc: Allocator, input_file_data: []const u8, shapes: *ArrayList(Shape), regions: *ArrayList(Region)) !void {
@@ -62,23 +118,17 @@ fn parseShape(alloc: Allocator, shape_string: []const u8, shape_out: *Shape) !vo
     const id_str = shape_string[0..1];
     const id = try std.fmt.parseInt(usize, id_str, 10);
 
-    var raw_lines = std.ArrayList([]const u8).empty;
+    var lines = ArrayList(ArrayList(u8)).empty;
     var lines_iter = std.mem.splitScalar(u8, shape_string[3..], '\n');
     while (lines_iter.next()) |line| {
-        try raw_lines.append(alloc, line);
-    }
-
-    var volume: usize = 0;
-    for (raw_lines.items) |line| {
-        for (line) |chr| {
-            if (chr == '#') {
-                volume += 1;
-            }
+        try lines.append(alloc, ArrayList(u8).empty);
+        var last: *ArrayList(u8) = &lines.items[lines.items.len - 1];
+        for (0..line.len) |i| {
+            try last.append(alloc, line[i]);
         }
     }
 
-    const shape = Shape{ .id = id, .raw_lines = raw_lines, .volume = volume };
-    shape_out.* = shape;
+    shape_out.init(id, lines);
 }
 
 fn parseRegion(alloc: Allocator, region_string: []const u8, region_out: *Region) !void {
@@ -104,46 +154,56 @@ fn parseRegion(alloc: Allocator, region_string: []const u8, region_out: *Region)
     };
 }
 
-fn debug_shape(shape: Shape) void {
-    std.debug.print("Shape {{ id={}, volume={}, lines = {{\n", .{ shape.id, shape.volume });
-    for (shape.raw_lines.items) |line| {
-        std.debug.print("  \"{s}\"\n", .{line});
-    }
-    std.debug.print("}}  }}\n", .{});
-}
-
-fn removeAccordingToVolumeHeuristic(alloc: Allocator, current_regions: *ArrayList(Region), shapes: *const ArrayList(Shape)) void {
+/// If the areas of the shapes added up is greater than the region's size, they can't possibly fit in any order
+fn retainAccordingToAreaHeuristic(alloc: Allocator, current_regions: *ArrayList(Region), shapes: *const ArrayList(Shape)) void {
     var i: isize = @intCast(current_regions.items.len - 1);
     while (i >= 0) : (i -= 1) {
         const region = current_regions.items[@intCast(i)];
 
-        const volume_capacity = region.height * region.width;
-        var volume_used: usize = 0;
+        const region_capacity = region.height * region.width;
+        var area_used: usize = 0;
         for (0.., region.present_counts.items) |present_id, present_count| {
-            volume_used += shapes.items[present_id].volume * present_count;
+            area_used += shapes.items[present_id].area() * present_count;
         }
 
-        std.debug.print("region {} takes {} out of {}\n", .{ i, volume_used, volume_capacity });
-
-        if (volume_used > volume_capacity) {
-            _ = current_regions.orderedRemove(@intCast(i));
+        if (area_used > region_capacity) {
+            current_regions.orderedRemove(@intCast(i)).deinit(alloc);
         }
     }
-    _ = alloc;
+}
+
+/// If a 3x3 square can fit n times in a region, then n shapes (of the same or smaller size) can fit in it.
+/// If not, it is possible but not strictly proven here. Here is is assumed such shapes don't fit.
+fn retainAccordingToSquareHeuristic(alloc: Allocator, current_regions: *ArrayList(Region), shapes: *const ArrayList(Shape)) void {
+    const template_size = 3;
+    _ = shapes; // used for debugging purposes only
+
+    var i: isize = @as(isize, @intCast(current_regions.items.len)) - 1;
+    while (i >= 0) : (i -= 1) {
+        const region = current_regions.items[@intCast(i)];
+
+        const template_squares_count = (region.width / template_size) * (region.height / template_size);
+
+        var required_shapes_tally: usize = 0;
+        for (0.., region.present_counts.items) |shape_id, shape_count| {
+            required_shapes_tally += shape_count;
+            _ = shape_id;
+        }
+
+        const shapes_can_fit = (template_squares_count >= required_shapes_tally);
+        if (!shapes_can_fit) {
+            current_regions.orderedRemove(@intCast(i)).deinit(alloc);
+        }
+    }
 }
 
 pub fn main() !void {
     libaoc.check_linkage();
 
     var debug_arena: DebugArena = undefined;
-    debug_arena.init();
+    debug_arena.initFast();
     const alloc = debug_arena.allocator();
     defer _ = debug_arena.deinit();
-
-    const slice = try alloc.alloc(u8, 10);
-    if (slice[0] == 0) {
-        std.debug.print("{s}", .{"meow"});
-    }
 
     // stdout
     var print_buffer = [1]u8{0} ** 1024;
@@ -151,12 +211,33 @@ pub fn main() !void {
     var stdout = stdout_fd.writer(print_buffer[0..]);
     defer stdout.interface.flush() catch {};
 
-    const string = try libaoc.readFileToString(alloc, "sample_input.txt");
+    const string = try libaoc.readFileToString(alloc, "input.txt");
+    defer alloc.free(string);
 
     var shapes = ArrayList(Shape).empty;
+    defer {
+        for (0..shapes.items.len) |i| {
+            var lines: ArrayList(ArrayList(u8)) = undefined;
+            shapes.items[i].deinit(&lines);
+
+            for (0.., lines.items) |j, _| {
+                lines.items[j].deinit(alloc);
+            }
+            lines.deinit(alloc);
+        }
+        shapes.deinit(alloc);
+    }
+
     var regions = ArrayList(Region).empty;
+    defer {
+        for (0.., regions.items) |i, _| {
+            regions.items[i].present_counts.deinit(alloc);
+        }
+        regions.deinit(alloc);
+    }
+
     try appendValues(alloc, string, &shapes, &regions);
-    std.debug.print("count before: {}\n", .{regions.items.len});
-    removeAccordingToVolumeHeuristic(alloc, &regions, &shapes);
-    std.debug.print("count after: {}\n", .{regions.items.len});
+    retainAccordingToAreaHeuristic(alloc, &regions, &shapes);
+    retainAccordingToSquareHeuristic(alloc, &regions, &shapes);
+    try stdout.interface.print("Count of Regions that may fit: {}\n", .{regions.items.len});
 }
